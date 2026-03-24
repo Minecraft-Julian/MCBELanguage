@@ -134,8 +134,12 @@ function clearPackSummary() {
   setPackIcon("");
 }
 
+function isSafeDataImageUrl(url) {
+  return typeof url === "string" && /^data:image\/(png|jpe?g);base64,[a-z0-9+/=]+$/i.test(url);
+}
+
 function setPackIcon(iconUrl) {
-  const safeIconUrl = (iconUrl && iconUrl.startsWith("data:image/")) ? iconUrl : "";
+  const safeIconUrl = isSafeDataImageUrl(iconUrl) ? iconUrl : "";
   if (safeIconUrl) {
     packIcon.style.backgroundImage = `url("${safeIconUrl}")`;
     packIcon.textContent = "";
@@ -148,7 +152,7 @@ function setPackIcon(iconUrl) {
 function renderPackSummary(meta) {
   packMeta = meta;
   packTitle.textContent = meta.name || "Pack";
-  packDesc.textContent = meta.description || "No description provided.";
+  packDesc.textContent = meta.description;
   setPackIcon(meta.iconDataUrl);
   showSection(packSummary);
 }
