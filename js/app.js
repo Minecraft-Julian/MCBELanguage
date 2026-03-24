@@ -289,16 +289,15 @@ async function processFile(file) {
   }
 
   const header = manifest?.header || {};
-  if (typeof header.name !== "string" || !header.name.trim()) {
+  const packName = typeof header.name === "string" ? header.name.trim() : "";
+  if (!packName) {
     showError("The pack manifest is missing a title (header.name).");
     resetFileInput();
     return;
   }
 
-  const packName = header.name.trim();
-  const packDescription = (typeof header.description === "string" && header.description.trim())
-    ? header.description.trim()
-    : "No description provided.";
+  const descriptionRaw = typeof header.description === "string" ? header.description.trim() : "";
+  const packDescription = descriptionRaw || "No description provided.";
 
   const iconPath = fileNames.find(p => /(?:^|[\\/])pack_icon\.(png|jpg|jpeg)$/i.test(p));
   let iconDataUrl = "";
@@ -310,7 +309,7 @@ async function processFile(file) {
     } catch { /* ignore icon errors */ }
   }
 
-  // Scan all files in the ZIP for .lang files inside a texts/ folder
+  // Use the file list to locate .lang files inside a texts/ folder
   const langFileRegex = /(?:^|[\\/])texts[\\/]([a-zA-Z]{2}_[a-zA-Z]{2})\.lang$/i;
 
   for (const path of fileNames) {
