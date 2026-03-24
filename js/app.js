@@ -52,6 +52,7 @@ const MC_LANGUAGES = [
   { code: "ar_SA", name: "العربية (المملكة العربية السعودية)" },
   { code: "he_IL", name: "עברית (ישראל)" },
 ];
+const PACK_ICON_REGEX = /(?:^|[\\/])pack_icon\.(png|jpe?g)$/i;
 
 /* ── State ──────────────────────────────────────────────────────── */
 let uploadedFileName = "";
@@ -134,8 +135,9 @@ function clearPackSummary() {
 }
 
 function setPackIcon(iconUrl) {
-  if (iconUrl) {
-    packIcon.style.backgroundImage = `url(${iconUrl})`;
+  const safeIconUrl = (iconUrl && iconUrl.startsWith("data:image/")) ? iconUrl : "";
+  if (safeIconUrl) {
+    packIcon.style.backgroundImage = `url("${safeIconUrl}")`;
     packIcon.textContent = "";
   } else {
     packIcon.style.backgroundImage = "";
@@ -302,7 +304,7 @@ async function processFile(file) {
   const descriptionRaw = typeof header.description === "string" ? header.description.trim() : "";
   const packDescription = descriptionRaw || "No description provided.";
 
-  const iconPath = fileNames.find(p => /(?:^|[\\/])pack_icon\.(png|jpe?g)$/i.test(p));
+  const iconPath = fileNames.find(p => PACK_ICON_REGEX.test(p));
   let iconDataUrl = "";
   if (iconPath) {
     try {
