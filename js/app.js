@@ -267,16 +267,23 @@ function sanitizeDraftEntries(entries) {
 }
 
 function getDraftState() {
-  const currentTargetLang = targetLangSel.value !== "" ? targetLangSel.value : targetLangCode;
+  const currentTargetLangCode = targetLangSel.value !== "" ? targetLangSel.value : targetLangCode;
   return {
     uploadedFileName,
     sourceLangCode: sourceLangSel.value || "",
-    targetLangCode: currentTargetLang || "",
+    targetLangCode: currentTargetLangCode || "",
     targetEntries: sanitizeDraftEntries(targetEntries),
     searchQuery: searchInput.value || "",
     tableVisible: !translationSection.classList.contains("hidden"),
     downloadVisible: !downloadSection.classList.contains("hidden"),
   };
+}
+
+function ensurePackFilename(name) {
+  const trimmedName = typeof name === "string" ? name.trim() : "";
+  if (!trimmedName) return "restored-pack.mcpack";
+  if (/\.(mcpack|mcaddon)$/i.test(trimmedName)) return trimmedName;
+  return `${trimmedName}.mcpack`;
 }
 
 function openDraftDb() {
@@ -399,7 +406,7 @@ async function restoreDraft() {
 
   const restoredFile = storedFile instanceof File
     ? storedFile
-    : new File([storedFile], savedState.uploadedFileName || storedFile.name || "restored-pack.mcpack", {
+    : new File([storedFile], ensurePackFilename(savedState.uploadedFileName || storedFile.name), {
         type: storedFile.type || "application/octet-stream",
         lastModified: Date.now(),
       });
@@ -876,8 +883,8 @@ downloadPackBtn.addEventListener("click", async () => {
     }
 
     // Add the translated lang file and the updated languages.json
-    const basePath = safeBase.replace(/\/$/, "");
-    const targetFolder = basePath ? outputZip.folder(basePath) : outputZip;
+    const normalizedBasePath = safeBase.replace(/\/$/, "").replace(/^\/+/, "");
+    const targetFolder = normalizedBasePath ? outputZip.folder(normalizedBasePath) : outputZip;
     targetFolder.file(`${targetLangCode}.lang`, langContent);
     targetFolder.file("languages.json", languagesJson);
 
