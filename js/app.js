@@ -75,6 +75,7 @@ let targetLangCode   = "";
 let packMeta         = null;
 let isProcessing     = false;        // guard against concurrent file processing
 let isRestoringDraft = false;
+let persistDraftTimer = null;
 
 /* ── DOM refs ────────────────────────────────────────────────────── */
 const $ = id => document.getElementById(id);
@@ -359,6 +360,22 @@ async function persistDraft({ file } = {}) {
   }
 }
 
+function queueDraftPersist(options = {}) {
+  if (options.file) {
+    if (persistDraftTimer) {
+      clearTimeout(persistDraftTimer);
+      persistDraftTimer = null;
+    }
+    return persistDraft(options);
+  }
+
+  if (persistDraftTimer) clearTimeout(persistDraftTimer);
+  persistDraftTimer = setTimeout(() => {
+    persistDraftTimer = null;
+    persistDraft();
+  }, 250);
+}
+
 async function restoreDraft() {
   if (!supportsDraftPersistence()) return;
 
@@ -417,7 +434,7 @@ async function restoreDraft() {
 /* ── File upload handling ────────────────────────────────────────── */
 
 // Only open the file dialog when clicking the drop zone background, not when
-// clicking the label (which already opens the dialog via its for= attribute).
+// clicking the browse button itself.
 dropZone.addEventListener("click", e => {
   if (e.target.closest("button") || e.target === fileInput) return;
   fileInput.click();
@@ -561,7 +578,7 @@ async function processFile(file) {
   populateLanguageDropdowns();
   showSection(langSection);
   resetFileInput();
-  await persistDraft({ file });
+  await queueDraftPersist({ file });
   isProcessing = false;
 }
 
@@ -596,8 +613,8 @@ function populateLanguageDropdowns() {
   targetLangSel.value = defaultTarget ? defaultTarget.code : "de_DE";
 }
 
-sourceLangSel.addEventListener("change", () => { persistDraft(); });
-targetLangSel.addEventListener("change", () => { persistDraft(); });
+sourceLangSel.addEventListener("change", () => { queueDraftPersist(); });
+targetLangSel.addEventListener("change", () => { queueDraftPersist(); });
 
 /* ── Load Translation Table ──────────────────────────────────────── */
 
@@ -641,7 +658,7 @@ async function buildTranslationTable() {
 
   // pre-fill download section each time table is (re)loaded
   hideSection(downloadSection);
-  await persistDraft();
+  queueDraftPersist();
 }
 
 /* ── Table rendering ─────────────────────────────────────────────── */
@@ -694,7 +711,7 @@ function onTranslationInput(e) {
     ta.classList.remove("filled");
   }
   updateProgress();
-  persistDraft();
+  queueDraftPersist();
 }
 
 /* ── Search / filter ─────────────────────────────────────────────── */
@@ -722,7 +739,7 @@ function applySearchFilter() {
 
 searchInput.addEventListener("input", () => {
   applySearchFilter();
-  persistDraft();
+  queueDraftPersist();
 });
 
 /* ── Progress display ────────────────────────────────────────────── */
@@ -743,7 +760,7 @@ clearBtn.addEventListener("click", () => {
     ta.classList.remove("filled");
   }
   updateProgress();
-  persistDraft();
+  queueDraftPersist();
 });
 
 /* ── Continue to Download ────────────────────────────────────────── */
@@ -752,7 +769,7 @@ toDownloadBtn.addEventListener("click", () => {
   buildDownloadPreview();
   showSection(downloadSection);
   downloadSection.scrollIntoView({ behavior: "smooth", block: "start" });
-  persistDraft();
+  queueDraftPersist();
 });
 
 /* ── Download preview ────────────────────────────────────────────── */
@@ -858,7 +875,8 @@ downloadPackBtn.addEventListener("click", async () => {
     }
 
     // Add the translated lang file and the updated languages.json
-    outputZip.folder(safeBase.replace(/\/$/, ""));
+    const folderPath = safeBase.replace(/\/$/, "");
+    if (folderPath) outputZip.folder(folderPath);
     outputZip.file(`${safeBase}${targetLangCode}.lang`, langContent);
     outputZip.file(`${safeBase}languages.json`, languagesJson);
 
