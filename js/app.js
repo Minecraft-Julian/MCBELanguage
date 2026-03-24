@@ -135,7 +135,7 @@ function clearPackSummary() {
 }
 
 function isSafeDataImageUrl(url) {
-  return typeof url === "string" && /^data:image\/(png|jpe?g);base64,[a-z0-9+/=]+$/i.test(url);
+  return typeof url === "string" && /^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(url);
 }
 
 function setPackIcon(iconUrl) {
@@ -151,7 +151,7 @@ function setPackIcon(iconUrl) {
 
 function renderPackSummary(meta) {
   packMeta = meta;
-  packTitle.textContent = meta.name || "Pack";
+  packTitle.textContent = meta.name;
   packDesc.textContent = meta.description;
   setPackIcon(meta.iconDataUrl);
   showSection(packSummary);
@@ -300,7 +300,7 @@ async function processFile(file) {
   const header = manifest?.header || {};
   const packName = typeof header.name === "string" ? header.name.trim() : "";
   if (!packName) {
-    showError("The pack manifest is missing a title (header.name).");
+    showError("The pack manifest is missing a name (header.name).");
     resetFileInput();
     return;
   }
