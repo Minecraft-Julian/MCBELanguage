@@ -54,6 +54,11 @@ const MC_LANGUAGES = [
 ];
 const PACK_ICON_REGEX = /(?:^|[\\/])pack_icon\.(png|jpe?g)$/i;
 const MAX_ICON_DATA_URL_LENGTH = 200000; // ~150 KB of base64 data
+const DRAFT_STATE_KEY = "mcbe-language-draft-v1";
+const DRAFT_DB_NAME = "mcbe-language-drafts";
+const DRAFT_DB_VERSION = 1;
+const DRAFT_STORE_NAME = "drafts";
+const DRAFT_FILE_KEY = "current-pack";
 
 /* ── State ──────────────────────────────────────────────────────── */
 let uploadedFileName = "";
@@ -69,10 +74,12 @@ let visibleKeys      = [];           // keys currently shown (after filter)
 let targetLangCode   = "";
 let packMeta         = null;
 let isProcessing     = false;        // guard against concurrent file processing
+let isRestoringDraft = false;
 
 /* ── DOM refs ────────────────────────────────────────────────────── */
 const $ = id => document.getElementById(id);
 const dropZone         = $("drop-zone");
+const browseBtn        = $("browse-btn");
 const fileInput        = $("file-input");
 const fileInfo         = $("file-info");
 const uploadError      = $("upload-error");
@@ -240,15 +247,183 @@ function buildManifest(packName) {
   ) + "\n";
 }
 
+function supportsDraftPersistence() {
+  return typeof localStorage !== "undefined" && typeof indexedDB !== "undefined";
+}
+
+function hasOption(select, value) {
+  return Array.from(select.options).some(option => option.value === value);
+}
+
+function sanitizeDraftEntries(entries) {
+  const sanitized = {};
+  if (!entries || typeof entries !== "object") return sanitized;
+  for (const [key, value] of Object.entries(entries)) {
+    if (typeof key !== "string" || typeof value !== "string" || !value.trim()) continue;
+    sanitized[key] = value;
+  }
+  return sanitized;
+}
+
+function getDraftState() {
+  return {
+    uploadedFileName,
+    sourceLangCode: sourceLangSel.value || "",
+    targetLangCode: targetLangSel.value || targetLangCode || "",
+    targetEntries: sanitizeDraftEntries(targetEntries),
+    searchQuery: searchInput.value || "",
+    tableVisible: !translationSection.classList.contains("hidden"),
+    downloadVisible: !downloadSection.classList.contains("hidden"),
+  };
+}
+
+function openDraftDb() {
+  return new Promise((resolve, reject) => {
+    if (!supportsDraftPersistence()) {
+      reject(new Error("Draft persistence is not supported in this browser."));
+      return;
+    }
+    const request = indexedDB.open(DRAFT_DB_NAME, DRAFT_DB_VERSION);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(DRAFT_STORE_NAME)) {
+        request.result.createObjectStore(DRAFT_STORE_NAME);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Could not open the draft database."));
+  });
+}
+
+async function runDraftStore(mode, action) {
+  const db = await openDraftDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DRAFT_STORE_NAME, mode);
+    const store = tx.objectStore(DRAFT_STORE_NAME);
+    let request;
+    try {
+      request = action(store);
+    } catch (error) {
+      db.close();
+      reject(error);
+      return;
+    }
+    tx.oncomplete = () => {
+      const result = request ? request.result : undefined;
+      db.close();
+      resolve(result);
+    };
+    tx.onerror = () => {
+      const err = tx.error || (request && request.error) || new Error("Draft storage request failed.");
+      db.close();
+      reject(err);
+    };
+    tx.onabort = () => {
+      const err = tx.error || (request && request.error) || new Error("Draft storage request was aborted.");
+      db.close();
+      reject(err);
+    };
+  });
+}
+
+async function saveDraftFile(file) {
+  if (!supportsDraftPersistence()) return;
+  await runDraftStore("readwrite", store => store.put(file, DRAFT_FILE_KEY));
+}
+
+async function loadDraftFile() {
+  if (!supportsDraftPersistence()) return null;
+  return runDraftStore("readonly", store => store.get(DRAFT_FILE_KEY));
+}
+
+async function clearDraftStorage() {
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem(DRAFT_STATE_KEY);
+  }
+  if (!supportsDraftPersistence()) return;
+  try {
+    await runDraftStore("readwrite", store => store.delete(DRAFT_FILE_KEY));
+  } catch {
+    // ignore cleanup errors
+  }
+}
+
+async function persistDraft({ file } = {}) {
+  if (isRestoringDraft || !uploadedFileName || !supportsDraftPersistence()) return;
+  try {
+    if (file) {
+      await saveDraftFile(file);
+    }
+    localStorage.setItem(DRAFT_STATE_KEY, JSON.stringify(getDraftState()));
+  } catch {
+    // ignore draft persistence errors
+  }
+}
+
+async function restoreDraft() {
+  if (!supportsDraftPersistence()) return;
+
+  const rawState = localStorage.getItem(DRAFT_STATE_KEY);
+  if (!rawState) return;
+
+  let savedState;
+  try {
+    savedState = JSON.parse(rawState);
+  } catch {
+    await clearDraftStorage();
+    return;
+  }
+
+  const storedFile = await loadDraftFile();
+  if (!storedFile) {
+    await clearDraftStorage();
+    return;
+  }
+
+  const restoredFile = storedFile instanceof File
+    ? storedFile
+    : new File([storedFile], savedState.uploadedFileName || "draft.mcpack", {
+        type: storedFile.type || "application/octet-stream",
+        lastModified: Date.now(),
+      });
+
+  isRestoringDraft = true;
+  try {
+    await processFile(restoredFile);
+
+    if (savedState.sourceLangCode && hasOption(sourceLangSel, savedState.sourceLangCode)) {
+      sourceLangSel.value = savedState.sourceLangCode;
+    }
+    if (savedState.targetLangCode && hasOption(targetLangSel, savedState.targetLangCode)) {
+      targetLangSel.value = savedState.targetLangCode;
+    }
+
+    if (savedState.tableVisible) {
+      await buildTranslationTable();
+      targetEntries = { ...targetEntries, ...sanitizeDraftEntries(savedState.targetEntries) };
+      searchInput.value = typeof savedState.searchQuery === "string" ? savedState.searchQuery : "";
+      applySearchFilter();
+      if (savedState.downloadVisible) {
+        buildDownloadPreview();
+        showSection(downloadSection);
+      }
+    }
+  } catch {
+    await clearDraftStorage();
+  } finally {
+    isRestoringDraft = false;
+  }
+}
+
 /* ── File upload handling ────────────────────────────────────────── */
 
 // Only open the file dialog when clicking the drop zone background, not when
 // clicking the label (which already opens the dialog via its for= attribute).
 dropZone.addEventListener("click", e => {
-  if (e.target.closest("label") || e.target === fileInput) return;
+  if (e.target.closest("button") || e.target === fileInput) return;
   fileInput.click();
 });
 dropZone.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") fileInput.click(); });
+browseBtn.addEventListener("click", () => fileInput.click());
 
 dropZone.addEventListener("dragover", e => {
   e.preventDefault();
@@ -386,6 +561,7 @@ async function processFile(file) {
   populateLanguageDropdowns();
   showSection(langSection);
   resetFileInput();
+  await persistDraft({ file });
   isProcessing = false;
 }
 
@@ -419,6 +595,9 @@ function populateLanguageDropdowns() {
   const defaultTarget = MC_LANGUAGES.find(l => !availableLangCodes.includes(l.code));
   targetLangSel.value = defaultTarget ? defaultTarget.code : "de_DE";
 }
+
+sourceLangSel.addEventListener("change", () => { persistDraft(); });
+targetLangSel.addEventListener("change", () => { persistDraft(); });
 
 /* ── Load Translation Table ──────────────────────────────────────── */
 
@@ -462,6 +641,7 @@ async function buildTranslationTable() {
 
   // pre-fill download section each time table is (re)loaded
   hideSection(downloadSection);
+  await persistDraft();
 }
 
 /* ── Table rendering ─────────────────────────────────────────────── */
@@ -514,11 +694,12 @@ function onTranslationInput(e) {
     ta.classList.remove("filled");
   }
   updateProgress();
+  persistDraft();
 }
 
 /* ── Search / filter ─────────────────────────────────────────────── */
 
-searchInput.addEventListener("input", () => {
+function applySearchFilter() {
   const q = searchInput.value.toLowerCase().trim();
   if (!q) {
     renderTable(allKeys);
@@ -537,6 +718,11 @@ searchInput.addEventListener("input", () => {
     ta.classList.toggle("filled", !!ta.value.trim());
   }
   updateProgress();
+}
+
+searchInput.addEventListener("input", () => {
+  applySearchFilter();
+  persistDraft();
 });
 
 /* ── Progress display ────────────────────────────────────────────── */
@@ -557,6 +743,7 @@ clearBtn.addEventListener("click", () => {
     ta.classList.remove("filled");
   }
   updateProgress();
+  persistDraft();
 });
 
 /* ── Continue to Download ────────────────────────────────────────── */
@@ -565,6 +752,7 @@ toDownloadBtn.addEventListener("click", () => {
   buildDownloadPreview();
   showSection(downloadSection);
   downloadSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  persistDraft();
 });
 
 /* ── Download preview ────────────────────────────────────────────── */
@@ -587,6 +775,9 @@ function buildDownloadPreview() {
     <p class="stat-line">
       Target language: <strong>${targetDisplay}</strong> &nbsp;|&nbsp;
       Translated: <strong>${translated}</strong> of <strong>${total}</strong> strings
+    </p>
+    <p class="stat-line">
+      Download file: <strong>${uploadedFileName}</strong>
     </p>
   `;
 }
@@ -667,6 +858,7 @@ downloadPackBtn.addEventListener("click", async () => {
     }
 
     // Add the translated lang file and the updated languages.json
+    outputZip.folder(safeBase.replace(/\/$/, ""));
     outputZip.file(`${safeBase}${targetLangCode}.lang`, langContent);
     outputZip.file(`${safeBase}languages.json`, languagesJson);
 
@@ -683,4 +875,8 @@ downloadPackBtn.addEventListener("click", async () => {
     downloadPackBtn.disabled = false;
     downloadPackBtn.textContent = "⬇ Download as .mcpack";
   }
+});
+
+restoreDraft().catch(() => {
+  clearDraftStorage().catch(() => {});
 });
