@@ -61,12 +61,14 @@ let parsedZip        = null;         // JSZip instance
 let langFiles        = {};           // { "path/en_US.lang": "file content", … }
 let parsedLangs      = {};           // { "en_US": { key: value }, … }
 let availableLangCodes = [];         // codes found in the ZIP
+let textsBasePath    = "texts/";     // path prefix up to and including "texts/" inside the ZIP
 let sourceEntries    = {};           // { key: sourceText } for selected source lang
 let targetEntries    = {};           // { key: existingTranslation } pre-filled from ZIP
 let allKeys          = [];           // ordered list of keys from the source
 let visibleKeys      = [];           // keys currently shown (after filter)
 let targetLangCode   = "";
 let packMeta         = null;
+let isProcessing     = false;        // guard against concurrent file processing
 
 /* ── DOM refs ────────────────────────────────────────────────────── */
 const $ = id => document.getElementById(id);
@@ -126,6 +128,7 @@ function resetFlowState() {
   tbody.innerHTML = "";
   searchInput.value = "";
   progressLabel.textContent = "";
+  textsBasePath = "texts/";
 }
 
 function clearPackSummary() {
@@ -239,7 +242,12 @@ function buildManifest(packName) {
 
 /* ── File upload handling ────────────────────────────────────────── */
 
-dropZone.addEventListener("click", () => fileInput.click());
+// Only open the file dialog when clicking the drop zone background, not when
+// clicking the label (which already opens the dialog via its for= attribute).
+dropZone.addEventListener("click", e => {
+  if (e.target.closest("label") || e.target === fileInput) return;
+  fileInput.click();
+});
 dropZone.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") fileInput.click(); });
 
 dropZone.addEventListener("dragover", e => {
@@ -259,6 +267,8 @@ fileInput.addEventListener("change", () => {
 });
 
 async function processFile(file) {
+  if (isProcessing) return;
+  isProcessing = true;
   clearError();
   resetFlowState();
 
@@ -266,14 +276,21 @@ async function processFile(file) {
   if (!["mcpack", "mcaddon"].includes(ext)) {
     showError("Please upload a .mcpack or .mcaddon file.");
     resetFileInput();
+    isProcessing = false;
     return;
   }
+
+  // Show loading indicator while the ZIP is being parsed
+  fileInfo.textContent = "⏳ Analyzing pack…";
+  showSection(fileInfo);
 
   try {
     parsedZip = await JSZip.loadAsync(file);
   } catch {
     showError("Could not open the file. Make sure it is a valid .mcpack or .mcaddon.");
     resetFileInput();
+    hideSection(fileInfo);
+    isProcessing = false;
     return;
   }
 
@@ -281,6 +298,7 @@ async function processFile(file) {
   langFiles = {};
   parsedLangs = {};
   availableLangCodes = [];
+  textsBasePath = "texts/";
 
   // Validate manifest.json to ensure it is a real Minecraft pack
   const fileNames = Object.keys(parsedZip.files);
@@ -288,6 +306,8 @@ async function processFile(file) {
   if (!manifestPath) {
     showError("This file is missing a manifest.json and doesn't look like a Minecraft Bedrock pack.");
     resetFileInput();
+    hideSection(fileInfo);
+    isProcessing = false;
     return;
   }
 
@@ -298,6 +318,8 @@ async function processFile(file) {
   } catch {
     showError("manifest.json could not be read. Is this a valid Minecraft pack?");
     resetFileInput();
+    hideSection(fileInfo);
+    isProcessing = false;
     return;
   }
 
@@ -306,6 +328,8 @@ async function processFile(file) {
   if (!packName) {
     showError("The pack manifest is missing a name (header.name).");
     resetFileInput();
+    hideSection(fileInfo);
+    isProcessing = false;
     return;
   }
 
@@ -331,6 +355,11 @@ async function processFile(file) {
     const m = path.match(langFileRegex);
     if (!m) continue;
     const code = m[1];
+    // Capture the path prefix up to and including "texts/" from the first lang file found
+    if (availableLangCodes.length === 0) {
+      const textsMatch = path.match(/^(.*?texts[\\/])/i);
+      textsBasePath = textsMatch ? textsMatch[1].replace(/\\/g, "/") : "texts/";
+    }
     try {
       const content = await parsedZip.files[path].async("text");
       langFiles[path] = content;
@@ -344,6 +373,8 @@ async function processFile(file) {
   if (availableLangCodes.length === 0) {
     showError("No .lang files found in this pack. Make sure it contains a texts/ folder with language files.");
     resetFileInput();
+    hideSection(fileInfo);
+    isProcessing = false;
     return;
   }
 
@@ -355,6 +386,7 @@ async function processFile(file) {
   populateLanguageDropdowns();
   showSection(langSection);
   resetFileInput();
+  isProcessing = false;
 }
 
 /* ── Language dropdown population ───────────────────────────────── */
@@ -390,14 +422,31 @@ function populateLanguageDropdowns() {
 
 /* ── Load Translation Table ──────────────────────────────────────── */
 
-loadBtn.addEventListener("click", buildTranslationTable);
+loadBtn.addEventListener("click", () => {
+  buildTranslationTable().catch(err => showError("Error loading translations: " + err.message));
+});
 
-function buildTranslationTable() {
+async function buildTranslationTable() {
   const srcCode = sourceLangSel.value;
   targetLangCode = targetLangSel.value;
 
   sourceEntries = parsedLangs[srcCode] || {};
-  targetEntries = parsedLangs[targetLangCode] || {};
+
+  // Try to load default pre-translations for the target language from the
+  // default-langs/ folder.  The file is optional – if it is missing the
+  // translator starts empty (or uses whatever is already in the pack).
+  let defaults = {};
+  try {
+    const response = await fetch(`default-langs/${targetLangCode}.lang`);
+    if (response.ok) {
+      const text = await response.text();
+      defaults = parseLangContent(text);
+    }
+  } catch { /* ignore – default translations are optional */ }
+
+  // Pack-specific translations override the defaults
+  const packLang = parsedLangs[targetLangCode] || {};
+  targetEntries = { ...defaults, ...packLang };
 
   allKeys = Object.keys(sourceEntries);
   if (allKeys.length === 0) {
@@ -523,17 +572,17 @@ toDownloadBtn.addEventListener("click", () => {
 function buildDownloadPreview() {
   const total = allKeys.length;
   const translated = allKeys.filter(k => (targetEntries[k] ?? "").trim() !== "").length;
-  const packName = uploadedFileName.replace(/\.(mcpack|mcaddon)$/i, "");
   const targetMeta = MC_LANGUAGES.find(l => l.code === targetLangCode);
   const targetDisplay = targetMeta ? `${targetMeta.name} (${targetLangCode})` : targetLangCode;
+  const textsFolder = textsBasePath.replace(/\/$/, ""); // e.g. "texts" or "MyPack/texts"
 
   downloadPreview.innerHTML = `
     <h3>Files that will be generated</h3>
+    <p style="color:var(--text-muted);font-size:.85rem;margin-top:0">All original pack files are preserved. Only the translation files listed below are added or updated.</p>
     <ul class="file-tree">
-      <li><span class="item-icon" aria-hidden="true">📁</span>manifest.json <em style="color:var(--text-muted);font-size:.78rem">(new resource pack manifest)</em></li>
-      <li><span class="item-icon" aria-hidden="true">📁</span>texts/</li>
-      <li style="padding-left:1.5rem"><span class="item-icon" aria-hidden="true">📄</span>${targetLangCode}.lang</li>
-      <li style="padding-left:1.5rem"><span class="item-icon" aria-hidden="true">📄</span>languages.json</li>
+      <li><span class="item-icon" aria-hidden="true">📁</span>${textsFolder}/</li>
+      <li style="padding-left:1.5rem"><span class="item-icon" aria-hidden="true">📄</span>${targetLangCode}.lang <em style="color:var(--text-muted);font-size:.78rem">(added / updated)</em></li>
+      <li style="padding-left:1.5rem"><span class="item-icon" aria-hidden="true">📄</span>languages.json <em style="color:var(--text-muted);font-size:.78rem">(added / updated)</em></li>
     </ul>
     <p class="stat-line">
       Target language: <strong>${targetDisplay}</strong> &nbsp;|&nbsp;
@@ -597,24 +646,37 @@ downloadPackBtn.addEventListener("click", async () => {
   downloadPackBtn.textContent = "⏳ Building…";
 
   try {
-    const entries   = getCurrentTranslatedEntries();
-    const packName  = uploadedFileName.replace(/\.(mcpack|mcaddon)$/i, "");
-    const langContent     = serializeLangEntries(entries, targetLangCode, packName);
-    const languagesJson   = buildLanguagesJson(getExistingLangCodes(), targetLangCode);
-    const manifestContent = buildManifest(packName + " – " + targetLangCode);
+    const entries       = getCurrentTranslatedEntries();
+    const packName      = uploadedFileName.replace(/\.(mcpack|mcaddon)$/i, "");
+    const langContent   = serializeLangEntries(entries, targetLangCode, packName);
+    const languagesJson = buildLanguagesJson(getExistingLangCodes(), targetLangCode);
 
-    const zip = new JSZip();
-    zip.file("manifest.json", manifestContent);
-    zip.file(`texts/${targetLangCode}.lang`, langContent);
-    zip.file("texts/languages.json", languagesJson);
+    // Paths inside the ZIP that we will add/replace (normalised to forward slashes, lowercase)
+    const safeBase          = textsBasePath.endsWith("/") ? textsBasePath : textsBasePath + "/";
+    const targetLangPath    = (safeBase + targetLangCode + ".lang").toLowerCase();
+    const langsJsonPath     = (safeBase + "languages.json").toLowerCase();
 
-    const blob = await zip.generateAsync({
+    // Build output ZIP starting from every file in the original pack,
+    // skipping only the files we are about to add/replace.
+    const outputZip = new JSZip();
+    for (const [path, zipEntry] of Object.entries(parsedZip.files)) {
+      if (zipEntry.dir) continue;
+      const normPath = path.replace(/\\/g, "/").toLowerCase();
+      if (normPath === targetLangPath || normPath === langsJsonPath) continue;
+      outputZip.file(path, await zipEntry.async("uint8array"), { binary: true });
+    }
+
+    // Add the translated lang file and the updated languages.json
+    outputZip.file(`${safeBase}${targetLangCode}.lang`, langContent);
+    outputZip.file(`${safeBase}languages.json`, languagesJson);
+
+    const blob = await outputZip.generateAsync({
       type: "blob",
       compression: "DEFLATE",
       compressionOptions: { level: 6 },
     });
 
-    triggerDownload(blob, `${packName}_${targetLangCode}.mcpack`);
+    triggerDownload(blob, uploadedFileName);
   } catch (err) {
     alert("Error generating pack: " + err.message);
   } finally {
