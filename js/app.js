@@ -267,11 +267,11 @@ function sanitizeDraftEntries(entries) {
 }
 
 function getDraftState() {
-  const selectedTargetLang = targetLangSel.value !== "" ? targetLangSel.value : targetLangCode;
+  const currentTargetLang = targetLangSel.value !== "" ? targetLangSel.value : targetLangCode;
   return {
     uploadedFileName,
     sourceLangCode: sourceLangSel.value || "",
-    targetLangCode: selectedTargetLang || "",
+    targetLangCode: currentTargetLang || "",
     targetEntries: sanitizeDraftEntries(targetEntries),
     searchQuery: searchInput.value || "",
     tableVisible: !translationSection.classList.contains("hidden"),
@@ -399,7 +399,7 @@ async function restoreDraft() {
 
   const restoredFile = storedFile instanceof File
     ? storedFile
-    : new File([storedFile], savedState.uploadedFileName || "draft.mcpack", {
+    : new File([storedFile], savedState.uploadedFileName || storedFile.name || "draft.mcpack", {
         type: storedFile.type || "application/octet-stream",
         lastModified: Date.now(),
       });
@@ -877,9 +877,9 @@ downloadPackBtn.addEventListener("click", async () => {
 
     // Add the translated lang file and the updated languages.json
     const folderPath = safeBase.replace(/\/$/, "");
-    if (folderPath) outputZip.folder(folderPath);
-    outputZip.file(`${safeBase}${targetLangCode}.lang`, langContent);
-    outputZip.file(`${safeBase}languages.json`, languagesJson);
+    const targetFolder = folderPath ? outputZip.folder(folderPath) : outputZip;
+    targetFolder.file(`${targetLangCode}.lang`, langContent);
+    targetFolder.file("languages.json", languagesJson);
 
     const blob = await outputZip.generateAsync({
       type: "blob",
