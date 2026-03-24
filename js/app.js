@@ -52,6 +52,8 @@ const MC_LANGUAGES = [
   { code: "ar_SA", name: "العربية (المملكة العربية السعودية)" },
   { code: "he_IL", name: "עברית (ישראל)" },
 ];
+const PACK_ICON_REGEX = /(?:^|[\\/])pack_icon\.(png|jpe?g)$/i;
+const MAX_ICON_DATA_URL_LENGTH = 200000; // ~150 KB of base64 data
 
 /* ── State ──────────────────────────────────────────────────────── */
 let uploadedFileName = "";
@@ -64,6 +66,7 @@ let targetEntries    = {};           // { key: existingTranslation } pre-filled 
 let allKeys          = [];           // ordered list of keys from the source
 let visibleKeys      = [];           // keys currently shown (after filter)
 let targetLangCode   = "";
+let packMeta         = null;
 
 /* ── DOM refs ────────────────────────────────────────────────────── */
 const $ = id => document.getElementById(id);
@@ -71,6 +74,10 @@ const dropZone         = $("drop-zone");
 const fileInput        = $("file-input");
 const fileInfo         = $("file-info");
 const uploadError      = $("upload-error");
+const packSummary      = $("pack-summary");
+const packIcon         = $("pack-icon");
+const packTitle        = $("pack-title");
+const packDesc         = $("pack-desc");
 const langSection      = $("language-section");
 const sourceLangSel    = $("source-lang");
 const targetLangSel    = $("target-lang");
@@ -106,6 +113,53 @@ function showError(msg) {
   showSection(uploadError);
 }
 function clearError() { hideSection(uploadError); uploadError.textContent = ""; }
+
+function resetFileInput() { fileInput.value = ""; }
+
+function resetFlowState() {
+  hideSection(langSection);
+  hideSection(translationSection);
+  hideSection(downloadSection);
+  hideSection(fileInfo);
+  hideSection(packSummary);
+  clearPackSummary();
+  tbody.innerHTML = "";
+  searchInput.value = "";
+  progressLabel.textContent = "";
+}
+
+function clearPackSummary() {
+  packMeta = null;
+  packTitle.textContent = "";
+  packDesc.textContent = "";
+  setPackIcon("");
+}
+
+function isSafeDataImageUrl(url) {
+  return typeof url === "string"
+    && url.length <= MAX_ICON_DATA_URL_LENGTH
+    && /^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]*$/.test(url);
+}
+
+function setPackIcon(iconUrl) {
+  const safeIconUrl = isSafeDataImageUrl(iconUrl) ? iconUrl : "";
+  if (safeIconUrl) {
+    const escapedUrl = safeIconUrl.replace(/["\\]/g, "");
+    packIcon.style.setProperty("background-image", `url("${escapedUrl}")`);
+    packIcon.textContent = "";
+  } else {
+    packIcon.style.setProperty("background-image", "");
+    packIcon.textContent = "📦";
+  }
+}
+
+function renderPackSummary(meta) {
+  packMeta = meta;
+  packTitle.textContent = meta.name;
+  packDesc.textContent = meta.description;
+  setPackIcon(meta.iconDataUrl);
+  showSection(packSummary);
+}
 
 /**
  * Parse a Minecraft .lang file into a plain key→value object.
@@ -206,14 +260,12 @@ fileInput.addEventListener("change", () => {
 
 async function processFile(file) {
   clearError();
-  hideSection(langSection);
-  hideSection(translationSection);
-  hideSection(downloadSection);
-  hideSection(fileInfo);
+  resetFlowState();
 
   const ext = file.name.split(".").pop().toLowerCase();
   if (!["mcpack", "mcaddon"].includes(ext)) {
     showError("Please upload a .mcpack or .mcaddon file.");
+    resetFileInput();
     return;
   }
 
@@ -221,6 +273,7 @@ async function processFile(file) {
     parsedZip = await JSZip.loadAsync(file);
   } catch {
     showError("Could not open the file. Make sure it is a valid .mcpack or .mcaddon.");
+    resetFileInput();
     return;
   }
 
@@ -229,8 +282,49 @@ async function processFile(file) {
   parsedLangs = {};
   availableLangCodes = [];
 
-  // Scan all files in the ZIP for .lang files inside a texts/ folder
+  // Validate manifest.json to ensure it is a real Minecraft pack
   const fileNames = Object.keys(parsedZip.files);
+  const manifestPath = fileNames.find(p => p.toLowerCase().endsWith("manifest.json"));
+  if (!manifestPath) {
+    showError("This file is missing a manifest.json and doesn't look like a Minecraft Bedrock pack.");
+    resetFileInput();
+    return;
+  }
+
+  let manifest;
+  try {
+    const manifestRaw = await parsedZip.files[manifestPath].async("text");
+    manifest = JSON.parse(manifestRaw);
+  } catch {
+    showError("manifest.json could not be read. Is this a valid Minecraft pack?");
+    resetFileInput();
+    return;
+  }
+
+  const header = manifest?.header || {};
+  const packName = typeof header.name === "string" ? header.name.trim() : ""; // trim rejects whitespace-only names
+  if (!packName) {
+    showError("The pack manifest is missing a name (header.name).");
+    resetFileInput();
+    return;
+  }
+
+  const descriptionRaw = typeof header.description === "string" ? header.description.trim() : "";
+  const packDescription = descriptionRaw || "No description provided.";
+
+  const iconPath = fileNames.find(p => PACK_ICON_REGEX.test(p));
+  let iconDataUrl = "";
+  if (iconPath) {
+    try {
+      const base64Icon = await parsedZip.files[iconPath].async("base64");
+      const extMatch = iconPath.match(PACK_ICON_REGEX);
+      const extRaw = (extMatch && extMatch[1]) ? extMatch[1].toLowerCase() : "png";
+      const ext = extRaw === "jpg" ? "jpeg" : extRaw;
+      iconDataUrl = `data:image/${ext};base64,${base64Icon}`;
+    } catch { /* ignore icon errors */ }
+  }
+
+  // Use the file list to locate .lang files inside a texts/ folder
   const langFileRegex = /(?:^|[\\/])texts[\\/]([a-zA-Z]{2}_[a-zA-Z]{2})\.lang$/i;
 
   for (const path of fileNames) {
@@ -249,15 +343,18 @@ async function processFile(file) {
 
   if (availableLangCodes.length === 0) {
     showError("No .lang files found in this pack. Make sure it contains a texts/ folder with language files.");
+    resetFileInput();
     return;
   }
 
   // Show file info
   fileInfo.textContent = `✓ Loaded "${file.name}" — found language files: ${availableLangCodes.join(", ")}`;
   showSection(fileInfo);
+  renderPackSummary({ name: packName, description: packDescription, iconDataUrl });
 
   populateLanguageDropdowns();
   showSection(langSection);
+  resetFileInput();
 }
 
 /* ── Language dropdown population ───────────────────────────────── */

@@ -1,5 +1,6 @@
 /* ── Reset & Base ───────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+.hidden { display: none; }
 
 :root {
   --bg:         #0d1117;
@@ -24,6 +25,7 @@ body {
   font-size: 15px;
   line-height: 1.6;
   min-height: 100vh;
+  overflow-y: auto;
 }
 
 /* ── Layout ─────────────────────────────────────────────────────── */
@@ -110,6 +112,36 @@ header .subtitle { color: var(--text-muted); margin-top: .4rem; }
   color: var(--danger);
   font-size: .9rem;
 }
+
+/* ── Pack Summary ─────────────────────────────────────────────────── */
+.pack-summary {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: .75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #0f141b;
+}
+.pack-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0d1117;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  color: var(--text-muted);
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+}
+.pack-text { display: flex; flex-direction: column; gap: .25rem; }
+.pack-title { font-size: 1.05rem; color: #fff; font-weight: 700; }
+.pack-desc  { color: var(--text-muted); font-size: .92rem; line-height: 1.4; }
 
 /* ── Buttons ─────────────────────────────────────────────────────── */
 .btn {
@@ -293,4 +325,6 @@ select:focus { border-color: var(--accent); }
   .lang-arrow { transform: rotate(90deg); align-self: center; }
   .table-actions { justify-content: stretch; }
   .table-actions .btn { flex: 1; text-align: center; }
+  .pack-summary { align-items: flex-start; }
+  .pack-icon { width: 64px; height: 64px; }
 }
