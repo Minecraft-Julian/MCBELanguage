@@ -16,7 +16,7 @@
   --shadow:     0 4px 16px rgba(0,0,0,.4);
 }
 
-html { scroll-behavior: smooth; min-height: 100%; }
+html { scroll-behavior: smooth; }
 
 body {
   background: var(--bg);

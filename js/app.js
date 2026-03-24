@@ -271,7 +271,7 @@ async function processFile(file) {
 
   // Validate manifest.json to ensure it is a real Minecraft pack
   const fileNames = Object.keys(parsedZip.files);
-  const manifestPath = fileNames.find(p => /(?:^|[\\/])manifest\.json$/i.test(p));
+  const manifestPath = fileNames.find(p => p.toLowerCase().endsWith("manifest.json"));
   if (!manifestPath) {
     showError("This file is missing a manifest.json and doesn't look like a Minecraft Bedrock pack.");
     resetFileInput();
@@ -299,7 +299,10 @@ async function processFile(file) {
   const descriptionRaw = typeof header.description === "string" ? header.description.trim() : "";
   const packDescription = descriptionRaw || "No description provided.";
 
-  const iconPath = fileNames.find(p => /(?:^|[\\/])pack_icon\.(png|jpg|jpeg)$/i.test(p));
+  const iconPath = fileNames.find(p => {
+    const lower = p.toLowerCase();
+    return lower.endsWith("pack_icon.png") || lower.endsWith("pack_icon.jpg") || lower.endsWith("pack_icon.jpeg");
+  });
   let iconDataUrl = "";
   if (iconPath) {
     try {
