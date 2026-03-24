@@ -130,21 +130,24 @@ function clearPackSummary() {
   packMeta = null;
   packTitle.textContent = "";
   packDesc.textContent = "";
-  packIcon.style.backgroundImage = "";
-  packIcon.textContent = "📦";
+  setPackIcon("");
+}
+
+function setPackIcon(iconUrl) {
+  if (iconUrl) {
+    packIcon.style.backgroundImage = `url(${iconUrl})`;
+    packIcon.textContent = "";
+  } else {
+    packIcon.style.backgroundImage = "";
+    packIcon.textContent = "📦";
+  }
 }
 
 function renderPackSummary(meta) {
   packMeta = meta;
   packTitle.textContent = meta.name || "Pack";
   packDesc.textContent = meta.description || "No description provided.";
-  if (meta.iconDataUrl) {
-    packIcon.style.backgroundImage = `url(${meta.iconDataUrl})`;
-    packIcon.textContent = "";
-  } else {
-    packIcon.style.backgroundImage = "";
-    packIcon.textContent = "📦";
-  }
+  setPackIcon(meta.iconDataUrl);
   showSection(packSummary);
 }
 
@@ -299,10 +302,7 @@ async function processFile(file) {
   const descriptionRaw = typeof header.description === "string" ? header.description.trim() : "";
   const packDescription = descriptionRaw || "No description provided.";
 
-  const iconPath = fileNames.find(p => {
-    const lower = p.toLowerCase();
-    return lower.endsWith("pack_icon.png") || lower.endsWith("pack_icon.jpg") || lower.endsWith("pack_icon.jpeg");
-  });
+  const iconPath = fileNames.find(p => /(?:^|[\\/])pack_icon\.(png|jpe?g)$/i.test(p));
   let iconDataUrl = "";
   if (iconPath) {
     try {
