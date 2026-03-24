@@ -53,6 +53,7 @@ const MC_LANGUAGES = [
   { code: "he_IL", name: "עברית (ישראל)" },
 ];
 const PACK_ICON_REGEX = /(?:^|[\\/])pack_icon\.(png|jpe?g)$/i;
+const MAX_ICON_DATA_URL_LENGTH = 200000; // ~150 KB of base64 data
 
 /* ── State ──────────────────────────────────────────────────────── */
 let uploadedFileName = "";
@@ -135,16 +136,18 @@ function clearPackSummary() {
 }
 
 function isSafeDataImageUrl(url) {
-  return typeof url === "string" && /^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(url);
+  return typeof url === "string"
+    && url.length <= MAX_ICON_DATA_URL_LENGTH
+    && /^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(url);
 }
 
 function setPackIcon(iconUrl) {
   const safeIconUrl = isSafeDataImageUrl(iconUrl) ? iconUrl : "";
   if (safeIconUrl) {
-    packIcon.style.backgroundImage = `url("${safeIconUrl}")`;
+    packIcon.style.setProperty("background-image", `url("${safeIconUrl}")`);
     packIcon.textContent = "";
   } else {
-    packIcon.style.backgroundImage = "";
+    packIcon.style.setProperty("background-image", "");
     packIcon.textContent = "📦";
   }
 }

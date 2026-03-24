@@ -25,8 +25,7 @@ body {
   font-size: 15px;
   line-height: 1.6;
   min-height: 100vh;
-  overflow-y: auto;
-  overflow-x: auto;
+  overflow: auto;
 }
 
 /* ── Layout ─────────────────────────────────────────────────────── */
