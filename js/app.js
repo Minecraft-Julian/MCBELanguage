@@ -399,7 +399,7 @@ async function restoreDraft() {
 
   const restoredFile = storedFile instanceof File
     ? storedFile
-    : new File([storedFile], savedState.uploadedFileName || storedFile.name || "draft.mcpack", {
+    : new File([storedFile], savedState.uploadedFileName || storedFile.name || "restored-pack.mcpack", {
         type: storedFile.type || "application/octet-stream",
         lastModified: Date.now(),
       });
@@ -876,8 +876,8 @@ downloadPackBtn.addEventListener("click", async () => {
     }
 
     // Add the translated lang file and the updated languages.json
-    const folderPath = safeBase.replace(/\/$/, "");
-    const targetFolder = folderPath ? outputZip.folder(folderPath) : outputZip;
+    const basePath = safeBase.replace(/\/$/, "");
+    const targetFolder = basePath ? outputZip.folder(basePath) : outputZip;
     targetFolder.file(`${targetLangCode}.lang`, langContent);
     targetFolder.file("languages.json", languagesJson);
 
