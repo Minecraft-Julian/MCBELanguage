@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MCBE.lang – Minecraft Bedrock Translation Tool</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="container">
+
+    <header>
+      <h1>🎮 MCBE.lang Translator</h1>
+      <p class="subtitle">Upload a Minecraft Bedrock pack, translate it into any language, and download the ready-to-use language files.</p>
+    </header>
+
+    <!-- ── Step 1: Upload ────────────────────────────────────────── -->
+    <section class="card" id="upload-section">
+      <div class="step-badge">1</div>
+      <h2>Upload your Pack</h2>
+      <div id="drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Drop zone for .mcpack or .mcaddon files">
+        <span class="dz-icon">📦</span>
+        <p>Drag &amp; drop your <strong>.mcpack</strong> or <strong>.mcaddon</strong> here</p>
+        <p class="dz-or">— or —</p>
+        <label class="btn btn-primary" for="file-input">Browse files</label>
+        <input type="file" id="file-input" accept=".mcpack,.mcaddon" hidden />
+      </div>
+      <div id="file-info" class="file-info hidden"></div>
+      <p id="upload-error" class="error hidden"></p>
+    </section>
+
+    <!-- ── Step 2: Language Selection ───────────────────────────── -->
+    <section class="card hidden" id="language-section">
+      <div class="step-badge">2</div>
+      <h2>Select Languages</h2>
+      <div class="lang-grid">
+        <div class="form-group">
+          <label for="source-lang">Source language (original text)</label>
+          <select id="source-lang"></select>
+        </div>
+        <div class="lang-arrow" aria-hidden="true">→</div>
+        <div class="form-group">
+          <label for="target-lang">Target language (your translation)</label>
+          <select id="target-lang"></select>
+        </div>
+      </div>
+      <button id="load-btn" class="btn btn-primary">Load Translation Table</button>
+    </section>
+
+    <!-- ── Step 3: Translation Table ────────────────────────────── -->
+    <section class="card hidden" id="translation-section">
+      <div class="step-badge">3</div>
+      <h2>Translate</h2>
+      <div class="translation-controls">
+        <input type="text" id="search-input" class="search-input" placeholder="🔍  Filter by key or text…" />
+        <span id="progress-label" class="progress-label"></span>
+      </div>
+      <div class="table-wrapper">
+        <table id="translation-table">
+          <thead>
+            <tr>
+              <th class="col-key">Key</th>
+              <th class="col-src">Original text</th>
+              <th class="col-trn">Translation</th>
+            </tr>
+          </thead>
+          <tbody id="translation-tbody"></tbody>
+        </table>
+      </div>
+      <div class="table-actions">
+        <button id="clear-btn" class="btn btn-secondary">Clear all translations</button>
+        <button id="to-download-btn" class="btn btn-primary">Continue to Download →</button>
+      </div>
+    </section>
+
+    <!-- ── Step 4: Download ──────────────────────────────────────── -->
+    <section class="card hidden" id="download-section">
+      <div class="step-badge">4</div>
+      <h2>Download</h2>
+      <div id="download-preview" class="download-preview"></div>
+      <div class="download-actions">
+        <button id="download-lang-btn" class="btn btn-secondary">⬇ Download <code>.lang</code> file only</button>
+        <button id="download-pack-btn" class="btn btn-success">⬇ Download as <code>.mcpack</code></button>
+      </div>
+      <p class="download-note">The <strong>.mcpack</strong> option bundles <code>manifest.json</code>, <code>texts/&lt;lang&gt;.lang</code> and <code>texts/languages.json</code> into a ready-to-import Minecraft pack.</p>
+    </section>
+
+  </div><!-- /.container -->
+
+  <!-- JSZip (MIT licensed, bundled locally) -->
+  <script src="js/lib/jszip.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
