@@ -138,13 +138,14 @@ function clearPackSummary() {
 function isSafeDataImageUrl(url) {
   return typeof url === "string"
     && url.length <= MAX_ICON_DATA_URL_LENGTH
-    && /^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(url);
+    && /^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]*$/.test(url);
 }
 
 function setPackIcon(iconUrl) {
   const safeIconUrl = isSafeDataImageUrl(iconUrl) ? iconUrl : "";
   if (safeIconUrl) {
-    packIcon.style.setProperty("background-image", `url("${safeIconUrl}")`);
+    const escapedUrl = safeIconUrl.replace(/["\\]/g, "");
+    packIcon.style.setProperty("background-image", `url("${escapedUrl}")`);
     packIcon.textContent = "";
   } else {
     packIcon.style.setProperty("background-image", "");
@@ -301,7 +302,7 @@ async function processFile(file) {
   }
 
   const header = manifest?.header || {};
-  const packName = typeof header.name === "string" ? header.name.trim() : "";
+  const packName = typeof header.name === "string" ? header.name.trim() : ""; // trim rejects whitespace-only names
   if (!packName) {
     showError("The pack manifest is missing a name (header.name).");
     resetFileInput();
@@ -316,7 +317,9 @@ async function processFile(file) {
   if (iconPath) {
     try {
       const base64Icon = await parsedZip.files[iconPath].async("base64");
-      const ext = iconPath.toLowerCase().endsWith(".png") ? "png" : "jpeg";
+      const extMatch = iconPath.match(PACK_ICON_REGEX);
+      const extRaw = (extMatch && extMatch[1]) ? extMatch[1].toLowerCase() : "png";
+      const ext = extRaw === "jpg" ? "jpeg" : extRaw;
       iconDataUrl = `data:image/${ext};base64,${base64Icon}`;
     } catch { /* ignore icon errors */ }
   }
