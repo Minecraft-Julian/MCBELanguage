@@ -267,10 +267,11 @@ function sanitizeDraftEntries(entries) {
 }
 
 function getDraftState() {
+  const selectedTargetLang = targetLangSel.value !== "" ? targetLangSel.value : targetLangCode;
   return {
     uploadedFileName,
     sourceLangCode: sourceLangSel.value || "",
-    targetLangCode: targetLangSel.value || targetLangCode || "",
+    targetLangCode: selectedTargetLang || "",
     targetEntries: sanitizeDraftEntries(targetEntries),
     searchQuery: searchInput.value || "",
     tableVisible: !translationSection.classList.contains("hidden"),
