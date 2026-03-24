@@ -1,2 +1,2 @@
-# MCBE.lang
+# MCBELanguage
 A translater
